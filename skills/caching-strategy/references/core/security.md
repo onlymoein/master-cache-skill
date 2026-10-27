@@ -148,4 +148,3 @@ Run the Web Cache Vulnerability Scanner (WCVS) against staging in CI, only on sy
 - [Next.js September 2026 security release](https://nextjs.org/blog/september-2026-security-release)
 - [Wiz: CVE-2025-49844](https://www.wiz.io/vulnerability-database/cve/cve-2025-49844)
 - [Redis: multi-tenant data isolation](https://redis.io/blog/data-isolation-multi-tenant-saas/)
-- [Hackmanit Web Cache Vulnerability Scanner](https://github.com/Hackmanit/Web-Cache-Vulnerability-Scanner)

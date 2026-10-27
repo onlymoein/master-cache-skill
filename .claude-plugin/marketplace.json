@@ -1,0 +1,20 @@
+{
+  "name": "master-cache-skill",
+  "owner": {
+    "name": "onlymoein"
+  },
+  "metadata": {
+    "description": "Caching strategy skill: designs, audits and implements caching for a specific website or app across every layer.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "caching-strategy",
+      "description": "Detects the stack, classifies every route and writes a validated caching plan (HTTP, CDN/edge, proxies, app and database caches, frameworks, CMS, APIs, mobile, LLM, CI) with invalidation, stampede protection, cache security and verification.",
+      "version": "1.0.0",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/caching-strategy"]
+    }
+  ]
+}

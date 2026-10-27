@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Lint the skill
+        run: python tools/lint_skill.py
+
+      - name: Validate the example plan
+        run: python skills/caching-strategy/scripts/validate_plan.py skills/caching-strategy/assets/plan.example.json
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Marketplace manifest is valid JSON
+        run: python -m json.tool .claude-plugin/marketplace.json > /dev/null

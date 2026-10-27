@@ -210,7 +210,6 @@ python scripts/find_cache_primitives.py .
 
 - [Next.js caching (Cache Components)](https://nextjs.org/docs/app/getting-started/caching)
 - [use cache](https://nextjs.org/docs/app/api-reference/directives/use-cache)
-- [cacheLife](https://nextjs.org/docs/app/api-reference/functions/cacheLife)
 - [revalidateTag](https://nextjs.org/docs/app/api-reference/functions/revalidateTag)
 - [updateTag](https://nextjs.org/docs/app/api-reference/functions/updateTag)
 - [Caching without Cache Components](https://nextjs.org/docs/app/guides/caching-without-cache-components)
