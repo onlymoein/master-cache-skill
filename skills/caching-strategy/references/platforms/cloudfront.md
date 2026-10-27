@@ -44,7 +44,7 @@ Full Terraform: `assets/snippets/cdn/cloudfront-cache-policy.tf`.
 ```
 
 - One cache behavior per path class: hashed assets (`CachingOptimized` managed policy is fine), public HTML (policy above, origin sends `s-maxage`), private/API paths (`CachingDisabled` managed policy).
-- Origin sends `Cache-Control: no-cache` plus `s-maxage=…, stale-while-revalidate=…, stale-if-error=…` for public HTML (CloudFront reads `s-maxage` within the policy's min/max).
+- Origin sends `Cache-Control: max-age=0, s-maxage=300, stale-while-revalidate=3600, stale-if-error=86400` for public HTML: browsers revalidate (`max-age=0`), CloudFront uses `s-maxage` within the policy's min/max. Don't combine `no-cache` with `s-maxage`: `no-cache` applies to shared caches too. CloudFront has no CDN-only header, so this one `Cache-Control` serves both.
 - Enable Origin Shield in the region nearest the origin.
 
 ## Rules and gotchas

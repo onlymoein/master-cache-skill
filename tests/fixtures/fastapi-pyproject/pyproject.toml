@@ -1,0 +1,13 @@
+[project]
+name = "orders-api"
+description = "Orders API with channels and redis-like semantics; uses django ideas"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.120.0",
+  "cashews[redis]>=7.6.0",
+  "sqlalchemy==2.0.36",
+  "anthropic>=0.70",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]

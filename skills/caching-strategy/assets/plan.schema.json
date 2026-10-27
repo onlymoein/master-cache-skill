@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "caching-strategy/plan.schema.json",
+  "title": "Caching plan",
+  "description": "Machine-readable caching plan produced by the caching-strategy skill. Structure only; scripts/validate_plan.py adds the safety rules (TTL vs staleness budget, no shared caching of personalized data, and so on).",
+  "type": "object",
+  "required": ["schema_version", "app", "routes", "invalidation_map", "phases", "monitoring"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "app": {
+      "type": "object",
+      "required": ["name", "archetype", "stack", "generated"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "archetype": {
+          "description": "Primary archetype; list secondary ones in secondary_archetypes.",
+          "enum": ["static-docs-marketing", "news-media", "ecommerce", "saas-multitenant", "social-ugc", "realtime-collab", "public-api", "mobile-backend", "internal-tool", "ai-llm-app", "video-media"]
+        },
+        "secondary_archetypes": {
+          "type": "array",
+          "items": {"enum": ["static-docs-marketing", "news-media", "ecommerce", "saas-multitenant", "social-ugc", "realtime-collab", "public-api", "mobile-backend", "internal-tool", "ai-llm-app", "video-media"]}
+        },
+        "stack": {
+          "type": "object",
+          "description": "Detected or confirmed stack, e.g. {\"frameworks\": [\"next@16.4.3\"], \"hosting\": [\"vercel\"], \"cdn\": [\"vercel\"], \"data_stores\": [\"postgres\", \"redis\"]}.",
+          "additionalProperties": {"type": "array", "items": {"type": "string"}}
+        },
+        "generated": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}"}
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "tenancy": {"enum": ["single", "multi", "multi-shared-db", "multi-isolated"]},
+        "sensitive_classes": {"type": "array", "items": {"type": "string"}},
+        "compliance": {"type": "array", "items": {"type": "string"}},
+        "instances": {"type": ["integer", "null"], "minimum": 1},
+        "notes": {"type": "string"}
+      }
+    },
+    "routes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/route"}},
+    "invalidation_map": {"type": "array", "items": {"$ref": "#/$defs/invalidation_event"}},
+    "phases": {"type": "array", "items": {"$ref": "#/$defs/phase"}},
+    "monitoring": {"type": "array", "items": {"$ref": "#/$defs/metric"}}
+  },
+  "$defs": {
+    "route": {
+      "type": "object",
+      "required": ["id", "pattern", "methods", "data_class", "audience", "staleness_budget_seconds", "browser", "shared", "vary", "cache_key", "app_cache", "tags", "invalidation", "decision_step", "owner", "verify"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+        "pattern": {"type": "string", "minLength": 1, "description": "Route pattern, endpoint or data type, e.g. /products/[slug] or GraphQL Query.product"},
+        "methods": {"type": "array", "minItems": 1, "items": {"enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "QUERY"]}},
+        "data_class": {"enum": ["fingerprinted-asset", "fixed-url-asset", "service-worker-script", "public-html-stable", "public-html-volatile", "personalized", "sensitive", "public-api-reference", "public-api-volatile", "search-listing", "mutation", "realtime", "llm-output", "media-segment", "redirect", "error-response"]},
+        "audience": {"enum": ["public", "personalized", "sensitive"]},
+        "staleness_budget_seconds": {"type": ["integer", "null"], "minimum": 0, "description": "Max staleness the business tolerates; null = unlimited because the URL is versioned"},
+        "browser": {
+          "type": "object",
+          "required": ["cache_control"],
+          "additionalProperties": false,
+          "properties": {"cache_control": {"type": "string", "minLength": 1}}
+        },
+        "shared": {
+          "type": "object",
+          "required": ["layer"],
+          "additionalProperties": false,
+          "properties": {
+            "layer": {"enum": ["cdn", "proxy", "gateway", "none"]},
+            "header": {"type": ["string", "null"], "description": "Header that sets the shared TTL, e.g. CDN-Cache-Control, Surrogate-Control, Cache-Control"},
+            "value": {"type": ["string", "null"]},
+            "ttl_seconds": {"type": ["integer", "null"], "minimum": 0}
+          }
+        },
+        "vary": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "cache_key": {
+          "type": ["object", "null"],
+          "properties": {
+            "query_allowlist": {"type": "array", "items": {"type": "string"}},
+            "normalize": {"type": "array", "items": {"type": "string"}},
+            "headers": {"type": "array", "items": {"type": "string"}},
+            "cookies": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "app_cache": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["layer"],
+              "additionalProperties": false,
+              "properties": {
+                "layer": {"enum": ["l1", "l2", "l1+l2", "framework", "db", "none"]},
+                "mechanism": {"type": ["string", "null"]},
+                "key_pattern": {"type": ["string", "null"], "description": "{app}:{env}:v{schema}:[t:{tenant}:]{entity}:{id}"},
+                "ttl_seconds": {"type": ["integer", "null"], "minimum": 0},
+                "stampede": {"type": ["string", "null"], "description": "e.g. single-flight + swr, lease, xfetch, lock"}
+              }
+            }
+          ]
+        },
+        "tags": {"type": "array", "maxItems": 50, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.:/{}-]*$"}},
+        "invalidation": {
+          "type": "object",
+          "required": ["trigger", "mechanism"],
+          "additionalProperties": false,
+          "properties": {
+            "trigger": {"type": "string", "minLength": 1, "description": "Event (product.updated webhook), 'deploy', 'ttl', or 'none' for no-store rows"},
+            "mechanism": {"type": "string", "minLength": 1},
+            "propagation_seconds": {"type": ["integer", "null"], "minimum": 0}
+          }
+        },
+        "decision_step": {"type": "integer", "minimum": 0, "maximum": 9},
+        "owner": {"type": "string", "minLength": 1},
+        "verify": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "notes": {"type": "string"}
+      }
+    },
+    "invalidation_event": {
+      "type": "object",
+      "required": ["event", "entities", "keys_or_tags", "order", "mechanism", "propagation_seconds", "owner"],
+      "additionalProperties": false,
+      "properties": {
+        "event": {"type": "string", "minLength": 1},
+        "entities": {"type": "array", "items": {"type": "string"}},
+        "keys_or_tags": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "order": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "e.g. db commit, app cache delete, cdn soft purge"},
+        "mechanism": {"type": "string", "minLength": 1},
+        "propagation_seconds": {"type": ["integer", "null"], "minimum": 0},
+        "owner": {"type": "string", "minLength": 1}
+      }
+    },
+    "phase": {
+      "type": "object",
+      "required": ["phase", "name", "routes", "rollback"],
+      "additionalProperties": false,
+      "properties": {
+        "phase": {"type": "integer", "minimum": 0},
+        "name": {"type": "string", "minLength": 1},
+        "routes": {"type": "array", "items": {"type": "string"}},
+        "rollback": {"type": "string", "minLength": 1},
+        "exit_criteria": {"type": "string"}
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["metric", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "metric": {"type": "string", "minLength": 1},
+        "target": {"type": "string", "minLength": 1},
+        "source": {"type": "string"},
+        "alert": {"type": "string"}
+      }
+    }
+  }
+}

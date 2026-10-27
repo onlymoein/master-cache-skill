@@ -68,6 +68,7 @@ Default headers for every response: `assets/snippets/headers/django_cache_header
 6. `cache.get_or_set` has no lock: add a Redis lock or single-flight for hot, expensive keys (`references/core/stampede-failure.md`).
 7. Template fragment keys need every variant argument: `{% cache 500 sidebar request.user.id LANGUAGE_CODE %}`.
 8. Multi-tenant: put the tenant in every key via a central `KEY_FUNCTION` or wrapper, not ad hoc strings.
+9. Any access to `request.session` or `request.user` (including templates and context processors) makes `SessionMiddleware` add `Vary: Cookie`, which fragments shared caches. Keep public cached views free of session/user access; check responses with `scripts/probe_headers.py`. Header defaults for every response: `assets/snippets/headers/django_cache_headers_middleware.py`.
 
 ## Caching layers
 

@@ -1,0 +1,6 @@
+name: feed_app
+dependencies:
+  flutter:
+    sdk: flutter
+  dio_cache_interceptor: ^4.0.0
+  cached_network_image: ^3.4.0

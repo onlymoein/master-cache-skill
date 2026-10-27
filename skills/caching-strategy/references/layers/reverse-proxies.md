@@ -53,7 +53,7 @@ PHP-FPM uses the same pattern with `fastcgi_cache_path`, `fastcgi_cache`, `fastc
 ## Rules and gotchas
 
 1. Only cache responses that are identical for every client (usually anonymous GET/HEAD). Bypass on session cookies and `Authorization`, both for lookup (`*_cache_bypass`) and storage (`*_no_cache`).
-2. nginx honors `Cache-Control`, `Expires` and `Set-Cookie` from upstream: it won't cache `private`/`no-cache`/`no-store` or responses with `Set-Cookie`. Don't paper over that with a global `proxy_ignore_headers Set-Cookie Cache-Control`; strip cookies on anonymous routes at the app instead.
+2. nginx honors `Cache-Control`, `Expires` and `Set-Cookie` from upstream: it won't cache `private`/`no-cache`/`no-store` or responses with `Set-Cookie`. Don't paper over that with a global `proxy_ignore_headers Set-Cookie Cache-Control`; strip cookies on anonymous routes at the app instead. When public pages send `Cache-Control: no-cache` for browsers, give nginx its own TTL with `X-Accel-Expires: <seconds>` (takes priority over `Cache-Control`, not passed to clients; verify for your version).
 3. `proxy_cache_lock` gives request collapsing; `proxy_cache_use_stale updating` + `proxy_cache_background_update` gives SWR; `use_stale error timeout http_5xx` gives SIE.
 4. nginx turns strong upstream ETags weak when it gzips, and drops unquoted ETags. Send quoted ETags.
 5. Varnish: mark uncacheable responses hit-for-pass/hit-for-miss explicitly, or concurrent requests queue behind a fetch that will never be cached.
