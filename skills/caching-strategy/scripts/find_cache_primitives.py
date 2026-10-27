@@ -13,6 +13,7 @@ Static, line-based scan (regexes, no code execution, no network). Prints one JSO
 
 Layers: http-header, cdn, proxy, framework, app-cache, in-process, distributed, db, client,
 service-worker, llm, build. Warnings are heuristics: confirm each one in context before acting.
+Warnings skip comment lines and test files; findings include them.
 
 Exit codes: 0 success, 2 bad usage. Python 3.9+, standard library only.
 """
@@ -183,6 +184,8 @@ PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 COMPILED = [(re.compile(p, re.M), layer, kind) for p, layer, kind in PATTERNS]
+COMMENT_LINE = re.compile(r"^\s*(#|//|--|\*|/\*|<!--|;)")
+TEST_FILE = re.compile(r"(^|/)(tests?|__tests__|spec|e2e)/|\.(test|spec)\.[cm]?[jt]sx?$|(^|/)test_[^/]*\.py$|_test\.(py|go|rb)$|_spec\.rb$")
 
 # --------------------------------------------------------------------------- warnings
 
@@ -355,8 +358,56 @@ WARNING_RULES: list[dict] = [
         "reference": "references/layers/service-workers.md",
     },
     {
+        "rule": "cookie-on-every-request",
+        "pattern": r"\bsetcookie\(",
+        "file_also": r"add_action\(\s*['\"](init|wp|wp_loaded|template_redirect|send_headers)['\"]",
+        "severity": "medium",
+        "message": "A cookie set on every request (WordPress init hook) puts Set-Cookie on anonymous pages: CDNs and APO then bypass the cache (cf-cache-status BYPASS). Set it only where needed, or bucket at the edge/client.",
+        "reference": "references/cms/wordpress.md",
+    },
+    {
+        "rule": "rails-public-shared-ttl",
+        "pattern": r"\b(expires_in|fresh_when|stale\?|http_cache_forever)\b[^\n]*public:\s*true",
+        "severity": "low",
+        "message": "public: true makes the response shared-cacheable: confirm it never depends on the session/user, and plan purges (without them the shared TTL is your staleness).",
+        "reference": "references/frameworks/rails.md",
+    },
+    {
+        "rule": "constant-key-in-user-scoped-code",
+        "pattern": r"\b(cache|Rails\.cache|Cache::|redis|client)\.?\s*(get|set|fetch|get_or_set|remember|setex)\w*\(\s*[\"'][^\"'{}%$#]*[\"']",
+        "file_also": r"request\.user|current_user|organization|tenant|auth\(\)|Auth::user|session\[",
+        "severity": "medium",
+        "message": "Constant cache key in code that reads the user/tenant: if the cached value depends on them, every tenant shares one entry (cross-tenant leak). Put the tenant/user in the key: {app}:{env}:v1:t:{tenant}:...",
+        "reference": "references/core/security.md",
+    },
+    {
+        "rule": "llm-volatile-prompt-prefix",
+        "pattern": r"(datetime\.(now|utcnow)\(\)|Date\.now\(\)|new Date\(\)|time\.time\(\)|uuid\d?\(\))",
+        "file_also": r"(?i)\b(anthropic|openai|messages\.create|chat\.completions|generateText|streamText)\b",
+        "line_also": r"(?i)(f[\"']|`|system|prompt|\+)",
+        "severity": "medium",
+        "message": "A timestamp/random value in prompt text breaks prompt caching when it sits before stable content. Put stable instructions/documents first, variable values last (or in the user turn).",
+        "reference": "references/layers/ai-llm.md",
+    },
+    {
+        "rule": "llm-call-without-prompt-caching",
+        "pattern": r"\bmessages\.create\(|\bmessages\.stream\(",
+        "file_also": r"(?i)\banthropic\b",
+        "file_lacks": r"cache_control",
+        "severity": "low",
+        "message": "Anthropic call without cache_control: if a long prefix (system prompt, documents, tools) repeats across requests, add a cache breakpoint after it and track cache_read_input_tokens.",
+        "reference": "references/layers/ai-llm.md",
+    },
+    {
+        "rule": "client-cache-never-stale",
+        "pattern": r"\bstaleTime\s*:\s*Infinity\b",
+        "severity": "low",
+        "message": "staleTime: Infinity never refetches: server-side changes don't show until the query is invalidated or the app restarts. Use a finite staleTime or invalidate on the mutations that change it.",
+        "reference": "references/frameworks/client-data-caches.md",
+    },
+    {
         "rule": "redis-set-without-ttl",
-        "pattern": r"\.set\(\s*[^,()\n]+,\s*[^,()\n]+\)\s*;?\s*$",
+        "pattern": r"(?<![\w.])(redis|client|rdb|cache|valkey|r)\.set\(\s*[^,()\n]+,\s*[^,()\n]+\)\s*;?\s*$",
         "file_also": r"\b(ioredis|redis|Redis)\b",
         "path_pattern": r"\.(js|mjs|cjs|ts|mts|tsx|py|rb)$",
         "severity": "low",
@@ -446,7 +497,8 @@ def scan(root: Path, max_findings: int, layers: set[str] | None) -> dict:
                     elif len(findings) >= max_findings:
                         limits["truncated"] = True
                     break  # one finding per line keeps the list readable
-        for rule in WARNING_RULES:
+        # Warnings skip comments and test files (they assert headers, they don't serve them).
+        for rule in [] if TEST_FILE.search(rel) else WARNING_RULES:
             if "_path_pattern" in rule and not rule["_path_pattern"].search(rel):
                 continue
             if "_file_also" in rule and not rule["_file_also"].search(text):
@@ -454,7 +506,7 @@ def scan(root: Path, max_findings: int, layers: set[str] | None) -> dict:
             if "_file_lacks" in rule and rule["_file_lacks"].search(text):
                 continue
             for lineno, line in enumerate(lines, 1):
-                if len(line) > 2000 or not rule["_rx"].search(line):
+                if len(line) > 2000 or COMMENT_LINE.match(line) or not rule["_rx"].search(line):
                     continue
                 if "_line_also" in rule and not rule["_line_also"].search(line):
                     continue

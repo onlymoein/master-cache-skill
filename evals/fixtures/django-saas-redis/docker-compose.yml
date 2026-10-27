@@ -1,0 +1,9 @@
+services:
+  web:
+    build: .
+    deploy:
+      replicas: 3
+  redis:
+    image: redis:7.4
+  db:
+    image: postgres:17

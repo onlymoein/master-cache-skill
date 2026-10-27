@@ -1082,6 +1082,8 @@ def scan_cms_files(scan: Scan, found: Findings) -> None:
                 if plugin == "woocommerce":
                     found.hints.setdefault("commerce", set()).add("woocommerce")
                 found.add("cms", f"wp-plugin:{plugin}", "wp-content/plugins")
+                if plugin == "cloudflare":
+                    found.add("cdn", "cloudflare", "wp-content/plugins/cloudflare")
         for dropin in ("object-cache.php", "advanced-cache.php"):
             if any(p.name == dropin and "wp-content" in scan.rel(p) for p in scan.files):
                 found.add("cms", f"wp-dropin:{dropin}", "wp-content")
@@ -1190,6 +1192,33 @@ def inspect_framework_configs(scan: Scan, found: Findings, notes: list[str]) -> 
 # --------------------------------------------------------------------------- archetypes and routing
 
 
+ROUTE_HINTS = {
+    "commerce_routes": {"cart", "checkout", "basket", "orders", "products", "product", "shop", "store"},
+    "content_routes": {"articles", "article", "news", "posts", "post", "blog", "stories"},
+    "saas_routes": {"dashboard", "dashboards", "workspaces", "workspace", "billing", "organizations", "orgs", "teams", "projects"},
+}
+TENANT_MODEL = re.compile(
+    r"(?i)(ForeignKey\(\s*['\"]?(Organization|Tenant|Workspace)\b|belongs_to\s+:(organization|tenant|workspace)\b"
+    r"|\b(tenant|organization|workspace)_?id\b|@relation\([^)]*\b(tenant|organization|workspace)Id\b)")
+
+
+def structural_hints(scan: Scan, found: Findings) -> None:
+    """Archetype hints from route/directory names and data-model files (cheap, heuristic)."""
+    names = {re.sub(r"[\[\]()]", "", d.rsplit("/", 1)[-1]).lower() for d in scan.dirs}
+    for hint, words in ROUTE_HINTS.items():
+        hits = sorted(names & words)
+        if hint == "commerce_routes" and not ({"cart", "checkout", "basket"} & set(hits)):
+            continue  # product pages alone don't make a store
+        if hits:
+            found.hints.setdefault(hint, set()).update(hits)
+    model_files = [p for p in scan.files if p.name in ("models.py", "schema.prisma") or
+                   (p.suffix == ".rb" and "/models/" in scan.rel(p)) or
+                   (p.suffix == ".ts" and re.search(r"(schema|entities|models)/", scan.rel(p)))][:80]
+    for path in model_files:
+        if TENANT_MODEL.search(read_text(path, 128 * 1024)):
+            found.hints.setdefault("tenancy_model", set()).add(scan.rel(path))
+
+
 def archetypes(found: Findings, declared_npm: dict[str, str]) -> list[dict]:
     cands: list[dict] = []
 
@@ -1203,6 +1232,11 @@ def archetypes(found: Findings, declared_npm: dict[str, str]) -> list[dict]:
     commerce = set(hints.get("commerce", set())) | ({"shopify"} if cms & {"shopify-hydrogen", "shopify-liquid"} else set()) | ({"magento"} if "magento" in cms else set())
     if commerce:
         add("ecommerce", 0.8, ["commerce platform: " + ", ".join(sorted(commerce))])
+    elif hints.get("commerce_routes"):
+        evidence = ["store-like routes: " + ", ".join(sorted(hints["commerce_routes"]))]
+        if hints.get("payments"):
+            evidence.append("payments SDK: " + ", ".join(sorted(hints["payments"])))
+        add("ecommerce", 0.7 if hints.get("payments") else 0.55, evidence)
     elif hints.get("payments") and (found.fw("nextjs", "nuxt", "sveltekit", "remix", "react-router", "rails", "django", "laravel")):
         add("ecommerce", 0.3, ["payments SDK with a web framework (could also be SaaS billing)"])
     static_fw = [f for f, e in found.frameworks.items() if e.get("kind") == "static"]
@@ -1215,12 +1249,25 @@ def archetypes(found: Findings, declared_npm: dict[str, str]) -> list[dict]:
     if static_fw:
         add("static-docs-marketing", 0.75, ["static/SSG frameworks: " + ", ".join(sorted(static_fw))])
     content_cms = cms & {"wordpress", "drupal", "contentful", "sanity", "strapi", "payload", "storyblok", "prismic", "directus", "ghost"}
-    if content_cms and not commerce:
-        add("news-media", 0.4, ["content CMS: " + ", ".join(sorted(content_cms)) + " (or static-docs-marketing; confirm publish frequency)"])
+    if (content_cms or hints.get("content_routes")) and not commerce and not hints.get("commerce_routes"):
+        evidence = []
+        if content_cms:
+            evidence.append("content CMS: " + ", ".join(sorted(content_cms)))
+        if hints.get("content_routes"):
+            evidence.append("content routes: " + ", ".join(sorted(hints["content_routes"])))
+        add("news-media", 0.5 if content_cms and hints.get("content_routes") else 0.4,
+            evidence + ["or static-docs-marketing: confirm publish frequency"])
     if hints.get("tenancy"):
         add("saas-multitenant", 0.75, ["tenancy library: " + ", ".join(sorted(hints["tenancy"]))])
-    elif hints.get("auth") and not commerce:
-        add("saas-multitenant", 0.35, ["auth library: " + ", ".join(sorted(hints["auth"])) + "; confirm tenancy model"])
+    elif hints.get("tenancy_model"):
+        add("saas-multitenant", 0.65, ["data model scoped by tenant/organization: " + ", ".join(sorted(hints["tenancy_model"])[:3])])
+    elif (hints.get("auth") or hints.get("saas_routes")) and not commerce and not hints.get("commerce_routes"):
+        evidence = []
+        if hints.get("auth"):
+            evidence.append("auth library: " + ", ".join(sorted(hints["auth"])))
+        if hints.get("saas_routes"):
+            evidence.append("app routes: " + ", ".join(sorted(hints["saas_routes"])))
+        add("saas-multitenant", 0.4 if len(evidence) == 2 else 0.3, evidence + ["confirm the tenancy model"])
     if hints.get("realtime"):
         add("realtime-collab", 0.5, ["realtime libraries: " + ", ".join(sorted(hints["realtime"]))])
     if hints.get("media"):
@@ -1375,6 +1422,7 @@ def route(found: Findings) -> tuple[list[str], list[dict]]:
         want("references/layers/api-graphql-rpc.md")
     if found.items.get("mobile"):
         want("references/layers/mobile-native.md")
+        want("references/layers/api-graphql-rpc.md")  # the backend's headers drive mobile HTTP caches
     if found.items.get("ai"):
         want("references/layers/ai-llm.md")
 
@@ -1384,6 +1432,8 @@ def route(found: Findings) -> tuple[list[str], list[dict]]:
         {"path": "references/core/stampede-failure.md", "when": "the plan adds an app cache, a CDN purge or a tag scheme, or there are hot keys/expensive misses"},
         {"path": "references/core/observability-testing.md", "when": "writing the verify steps, monitoring and rollout"},
     ]
+    if set(found.items.get("cms", {})) & {"wordpress", "drupal", "magento"} and not found.fw("laravel", "symfony", "php"):
+        read_when.append({"path": "references/frameworks/laravel-php.md", "when": "tuning the PHP runtime (OPcache, JIT, FPM reloads on deploy)"})
     if found.items.get("ci"):
         read_when.append({"path": "references/layers/build-ci-network.md", "when": "the user asks about build, CI, Docker layer, DNS or TLS caching"})
     if not (found.items.get("cdn") or found.items.get("hosting")) and web:
@@ -1413,6 +1463,7 @@ def detect(root: Path) -> dict:
     scan_service_workers(scan, found)
     scan_ci(scan, found)
     inspect_framework_configs(scan, found, notes)
+    structural_hints(scan, found)
     for fw, orm in (("django", "django-orm"), ("rails", "active-record"), ("laravel", "eloquent"), ("phoenix", "ecto")):
         if found.fw(fw):
             found.add("orm", orm, f"implied by {fw}")
