@@ -1,0 +1,17 @@
+data_class,audience,decision_step,browser_cache_control,shared_layer,shared_header,shared_value,app_cache,invalidation,staleness_budget_hint,main_risk
+fingerprinted-asset,public,3,"public, max-age=31536000, immutable",cdn,Cache-Control,"public, max-age=31536000, immutable",none,new URL per build; keep previous build assets deployed,null (versioned URL),immutable on an unhashed file
+fixed-url-asset,public,4,no-cache,cdn,CDN-Cache-Control,"max-age=86400",none,purge on deploy,3600-86400,long browser TTL can't be recalled
+service-worker-script,public,4,no-cache,none,,,none,deploy,0,stale SW pins old app versions
+public-html-stable,public,5,no-cache,cdn,CDN-Cache-Control,"max-age=86400, stale-while-revalidate=86400, stale-if-error=604800",framework data cache with tags,publish webhook -> tag purge,300-3600,Set-Cookie on public pages kills caching
+public-html-volatile,public,5,no-cache,cdn,CDN-Cache-Control,"max-age=60, stale-while-revalidate=600, stale-if-error=86400",fragment cache with tags,event purge + short TTL backstop,30-300,stampede at expiry
+personalized,personalized,2,"private, no-cache",none,,,cache-aside keyed by tenant/user; delete on write,delete on write,0-60,request collapse without private; cross-tenant keys
+sensitive,sensitive,1,no-store,none,,,none (or encrypted per user with minimal TTL),none,0,disk persistence; logs
+public-api-reference,public,5,no-cache,cdn,CDN-Cache-Control,"max-age=3600, stale-while-revalidate=86400, stale-if-error=86400",preload at startup or cache-aside,purge on admin publish; versioned keys,300-86400,clients hard-coding long TTLs
+public-api-volatile,public,4,no-cache,cdn,CDN-Cache-Control,"max-age=5, stale-if-error=60",short TTL + events,event-driven; re-check at commit,1-30,overselling from cache
+search-listing,public,6,no-cache,cdn,CDN-Cache-Control,"max-age=60, stale-while-revalidate=300",result cache for head queries,TTL + index-update events,60-300,cardinality explosion
+mutation,personalized,0,no-store,none,,,none (triggers invalidation),emit tags/events,0,missing invalidation
+realtime,public,4,no-store,none,,,in-memory state on sharded servers,ops/CRDT updates,0,treating live data as cacheable
+llm-output,personalized,7,"private, no-store",none,,,exact-match / embedding / retrieval caches with model+prompt version in key,model/prompt version in key,varies,semantic false positives; cross-user leaks
+media-segment,public,3,"public, max-age=31536000, immutable",cdn,Cache-Control,"public, max-age=31536000, immutable",none,new ID per change; purge on takedown,null (versioned URL),max object size; private media needs signed URLs
+redirect,public,4,max-age=86400,cdn,Cache-Control,max-age=86400,none,change the rule; browser copies can't be recalled,86400,headerless 301 cached for a very long time
+error-response,public,9,"public, max-age=60",cdn,CDN-Cache-Control,"max-age=10",negative cache with short TTL,TTL,10-60,values are for 404 (410 can be long); 5xx get no-store or at most 5-10 s at the CDN; heuristic 404 caching during deploys

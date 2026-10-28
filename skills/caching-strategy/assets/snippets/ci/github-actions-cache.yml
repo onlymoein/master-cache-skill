@@ -1,0 +1,48 @@
+# GitHub Actions: dependency cache + Next.js build cache with safe keys.
+# - Key on the lockfile hash (dependencies) and on lockfile + source hashes (build cache).
+# - restore-keys give a partial hit when sources change; never restore across lockfile changes
+#   for node_modules-like caches.
+# - Untrusted events (fork pull_request, pull_request_target, issue_comment) only restore caches;
+#   only pushes to main save them (cache poisoning). Never cache secrets or output embedding them.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm              # caches the pnpm store keyed on pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Restore Next.js build cache
+        id: next-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx', '!node_modules/**', '!.next/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - run: pnpm build
+
+      - name: Save Next.js build cache (trusted pushes only)
+        if: github.event_name == 'push' && steps.next-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .next/cache
+          key: ${{ steps.next-cache.outputs.cache-primary-key }}

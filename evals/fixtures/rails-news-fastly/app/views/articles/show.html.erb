@@ -1,0 +1,4 @@
+<% cache @article do %>
+  <h1><%= @article.title %></h1>
+  <%= render @article.comments %>
+<% end %>

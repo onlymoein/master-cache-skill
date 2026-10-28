@@ -1,0 +1,9 @@
+[project]
+name = "support-bot"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.120.0",
+  "anthropic>=0.70.0",
+  "redis>=5.2",
+  "qdrant-client>=1.15",
+]

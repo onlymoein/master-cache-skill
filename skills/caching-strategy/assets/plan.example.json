@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "app": {
+    "name": "shop",
+    "archetype": "ecommerce",
+    "secondary_archetypes": ["ai-llm-app"],
+    "stack": {
+      "frameworks": ["next@16.4.3"],
+      "hosting": ["vercel"],
+      "cdn": ["vercel"],
+      "data_stores": ["postgres", "redis"]
+    },
+    "generated": "2026-10-27"
+  },
+  "constraints": {"tenancy": "single", "sensitive_classes": ["payment", "auth"], "compliance": ["gdpr", "pci-dss"], "instances": null},
+  "routes": [
+    {
+      "id": "R1",
+      "pattern": "/_next/static/*",
+      "methods": ["GET", "HEAD"],
+      "data_class": "fingerprinted-asset",
+      "audience": "public",
+      "staleness_budget_seconds": null,
+      "browser": {"cache_control": "public, max-age=31536000, immutable"},
+      "shared": {"layer": "cdn", "header": "Cache-Control", "value": "public, max-age=31536000, immutable", "ttl_seconds": 31536000},
+      "vary": ["Accept-Encoding"],
+      "cache_key": {"query_allowlist": [], "normalize": ["drop all query params"]},
+      "app_cache": null,
+      "tags": [],
+      "invalidation": {"trigger": "deploy", "mechanism": "new hashed URL per build; keep previous build assets deployed", "propagation_seconds": 0},
+      "decision_step": 3,
+      "owner": "platform",
+      "verify": ["curl -sI https://shop.example.com/_next/static/chunks/main-abc123.js | grep -i cache-control"]
+    },
+    {
+      "id": "R2",
+      "pattern": "/products/[slug]",
+      "methods": ["GET", "HEAD"],
+      "data_class": "public-html-volatile",
+      "audience": "public",
+      "staleness_budget_seconds": 60,
+      "browser": {"cache_control": "no-cache"},
+      "shared": {"layer": "cdn", "header": "CDN-Cache-Control", "value": "max-age=300, stale-while-revalidate=3600, stale-if-error=86400", "ttl_seconds": 300},
+      "vary": ["Accept-Encoding"],
+      "cache_key": {"query_allowlist": ["variant"], "normalize": ["strip utm_*, gclid, fbclid", "sort params"]},
+      "app_cache": {"layer": "framework", "mechanism": "'use cache' + cacheLife('hours') + cacheTag('product:{id}')", "key_pattern": "shop:prod:v1:product:{id}", "ttl_seconds": 3600, "stampede": "framework single-flight + swr"},
+      "tags": ["product:{id}", "section:catalog", "all"],
+      "invalidation": {"trigger": "product.updated webhook", "mechanism": "revalidateTag('product:{id}', 'max'); Vercel purges its CDN for the tag", "propagation_seconds": 30},
+      "decision_step": 5,
+      "owner": "storefront",
+      "verify": [
+        "curl -sI https://shop.example.com/products/x | grep -iE 'cache-control|age|x-vercel-cache'",
+        "curl -sI -H 'RSC: 1' https://shop.example.com/products/x | grep -iE 'vary|content-type'"
+      ]
+    },
+    {
+      "id": "R3",
+      "pattern": "/account/*",
+      "methods": ["GET", "HEAD"],
+      "data_class": "personalized",
+      "audience": "personalized",
+      "staleness_budget_seconds": 0,
+      "browser": {"cache_control": "private, no-cache"},
+      "shared": {"layer": "none", "header": null, "value": null, "ttl_seconds": null},
+      "vary": [],
+      "cache_key": null,
+      "app_cache": {"layer": "l2", "mechanism": "cache-aside in Redis, delete on write", "key_pattern": "shop:prod:v1:user:{userId}:orders", "ttl_seconds": 300, "stampede": "single-flight"},
+      "tags": [],
+      "invalidation": {"trigger": "order.created, order.updated", "mechanism": "DEL shop:prod:v1:user:{userId}:orders after commit", "propagation_seconds": 0},
+      "decision_step": 2,
+      "owner": "accounts",
+      "verify": ["python scripts/probe_headers.py https://shop.example.com/account --cookie-a \"$SESSION_A\""]
+    },
+    {
+      "id": "R4",
+      "pattern": "/checkout/*, /api/payments/*",
+      "methods": ["GET", "POST"],
+      "data_class": "sensitive",
+      "audience": "sensitive",
+      "staleness_budget_seconds": 0,
+      "browser": {"cache_control": "no-store"},
+      "shared": {"layer": "none", "header": null, "value": null, "ttl_seconds": null},
+      "vary": [],
+      "cache_key": null,
+      "app_cache": null,
+      "tags": [],
+      "invalidation": {"trigger": "none", "mechanism": "none (never cached)", "propagation_seconds": null},
+      "decision_step": 1,
+      "owner": "payments",
+      "verify": ["curl -sI https://shop.example.com/checkout | grep -i 'cache-control: no-store'"]
+    },
+    {
+      "id": "R5",
+      "pattern": "/api/stock/[sku]",
+      "methods": ["GET"],
+      "data_class": "public-api-volatile",
+      "audience": "public",
+      "staleness_budget_seconds": 10,
+      "browser": {"cache_control": "no-cache"},
+      "shared": {"layer": "cdn", "header": "CDN-Cache-Control", "value": "max-age=5, stale-if-error=60", "ttl_seconds": 5},
+      "vary": ["Accept-Encoding"],
+      "cache_key": {"query_allowlist": [], "normalize": []},
+      "app_cache": {"layer": "l1+l2", "mechanism": "cache-aside: L1 2 s, L2 Redis 5 s, re-check stock at commit", "key_pattern": "shop:prod:v1:stock:{sku}", "ttl_seconds": 5, "stampede": "single-flight + jitter"},
+      "tags": ["stock:{sku}", "all"],
+      "invalidation": {"trigger": "ttl", "mechanism": "TTL only (5 s); checkout re-reads stock from the database", "propagation_seconds": null},
+      "decision_step": 4,
+      "owner": "inventory",
+      "verify": ["for i in 1 2; do curl -sI https://shop.example.com/api/stock/abc | grep -iE 'age|x-vercel-cache'; done"]
+    },
+    {
+      "id": "R6",
+      "pattern": "POST /api/products/[id]",
+      "methods": ["POST", "PUT", "DELETE"],
+      "data_class": "mutation",
+      "audience": "personalized",
+      "staleness_budget_seconds": 0,
+      "browser": {"cache_control": "no-store"},
+      "shared": {"layer": "none", "header": null, "value": null, "ttl_seconds": null},
+      "vary": [],
+      "cache_key": null,
+      "app_cache": null,
+      "tags": [],
+      "invalidation": {"trigger": "this route is the trigger", "mechanism": "emits product.updated → invalidation_map", "propagation_seconds": null},
+      "decision_step": 0,
+      "owner": "catalog",
+      "verify": ["curl -s -o /dev/null -D - -X POST https://shop.example.com/api/products/1 | grep -i 'cache-control: no-store'"]
+    }
+  ],
+  "invalidation_map": [
+    {
+      "event": "product.updated",
+      "entities": ["product"],
+      "keys_or_tags": ["product:{id}", "section:catalog"],
+      "order": ["db commit", "revalidateTag('product:{id}', 'max')", "Vercel CDN tag invalidation (automatic)"],
+      "mechanism": "CMS/admin webhook → Route Handler (signature checked) → revalidateTag",
+      "propagation_seconds": 30,
+      "owner": "storefront"
+    },
+    {
+      "event": "order.created",
+      "entities": ["order", "user"],
+      "keys_or_tags": ["shop:prod:v1:user:{userId}:orders"],
+      "order": ["db commit", "redis DEL"],
+      "mechanism": "after-commit hook",
+      "propagation_seconds": 0,
+      "owner": "accounts"
+    }
+  ],
+  "phases": [
+    {"phase": 0, "name": "Safety: private/no-store on account, checkout, payments", "routes": ["R3", "R4", "R6"], "rollback": "revert header middleware", "exit_criteria": "probe_headers leak test passes"},
+    {"phase": 1, "name": "Immutable hashed assets", "routes": ["R1"], "rollback": "none needed (framework default)"},
+    {"phase": 3, "name": "CDN for product pages with tag purge", "routes": ["R2"], "rollback": "set CDN-Cache-Control: no-store via feature flag"},
+    {"phase": 5, "name": "Stock micro-cache", "routes": ["R5"], "rollback": "disable app cache flag"}
+  ],
+  "monitoring": [
+    {"metric": "cdn_hit_ratio_cacheable (excluding BYPASS) for /products/*", "target": ">= 0.90", "source": "Vercel observability", "alert": "< 0.80 for 15 min"},
+    {"metric": "origin_rps", "target": "-70% vs baseline", "source": "APM"},
+    {"metric": "redis keyspace_hits / (hits + misses)", "target": ">= 0.85", "source": "INFO stats", "alert": "evicted_keys rising"},
+    {"metric": "publish-to-fresh latency", "target": "p95 <= 60 s", "source": "synthetic check after webhook"}
+  ]
+}

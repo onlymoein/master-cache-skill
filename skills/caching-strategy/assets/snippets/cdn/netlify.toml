@@ -1,0 +1,39 @@
+# Netlify: static assets, function responses on the durable cache, cache tags, private paths.
+# Netlify-CDN-Cache-Control is for Netlify's CDN only; Cache-Control is what browsers see.
+# Purge by tag after content changes:
+#   netlify api purgeCache --data '{"site_id": "<id>", "cache_tags": ["product:123"]}'
+#   or from a function: import { purgeCache } from "@netlify/functions"; await purgeCache({ tags: ["product:123"] })
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/account/*"
+  [headers.values]
+    Cache-Control = "private, no-cache"
+
+[[headers]]
+  for = "/api/me/*"
+  [headers.values]
+    Cache-Control = "private, no-store"
+
+# Function responses set their own headers, e.g. in netlify/functions/catalog.mts:
+#
+#   return new Response(body, {
+#     headers: {
+#       "Cache-Control": "public, max-age=0, must-revalidate",
+#       "Netlify-CDN-Cache-Control": "public, durable, s-maxage=3600, stale-while-revalidate=86400",
+#       "Netlify-Cache-Tag": `product:${id},all`,
+#       "Netlify-Vary": "query=page|sort",
+#     },
+#   })
+#
+# `durable` shares the cached response across edge nodes; `Netlify-Vary` keys on selected
+# query params/headers/cookies instead of the full URL.
