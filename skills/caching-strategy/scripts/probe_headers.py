@@ -220,7 +220,9 @@ def header_findings(url: str, resp: dict, vendors: list[str]) -> list[dict]:
         add("medium", "vary-cookie-or-user-agent", "Vary on Cookie/User-Agent: a variant per user/UA, near-zero hit ratio; some CDNs refuse to cache it.")
     if "*" in [p.strip() for p in vary.split(",")]:
         add("medium", "vary-star", "Vary: * makes the response unusable from caches.")
-    if "no-store" in cc and ("no-cache" in cc or "must-revalidate" in cc) and ("max-age" in cc or "pragma" in h or "expires" in h):
+    nextjs_dynamic = any(k.startswith("x-nextjs") for k in h) or "rsc" in vary  # Next.js emits this header itself
+    if "no-store" in cc and ("no-cache" in cc or "must-revalidate" in cc) and ("max-age" in cc or "pragma" in h or "expires" in h) \
+            and not nextjs_dynamic:
         add("low", "kitchen-sink", "Kitchen-sink no-store headers: `Cache-Control: no-store` alone is enough.")
     if "cloudflare" in vendors and "stale-while-revalidate" in cc and any(d in cc for d in ("s-maxage", "must-revalidate", "proxy-revalidate", "no-cache")):
         add("medium", "cloudflare-swr-disabled",

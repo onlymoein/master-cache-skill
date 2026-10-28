@@ -11,6 +11,7 @@ Prints one JSON object on stdout:
     frameworks          [{name, version, kind, source, config}]
     client_caches, hosting, cdn, proxies, data_stores, orm, cms, api,
     mobile, ai, ci, service_worker      [{name, version?, source}]
+    instances            {min, max, serverless, multiple, evidence}: replica/instance count from k8s, compose, Fly, Render, ECS
     archetype_candidates [{id, confidence, evidence}]
     read                 reference paths to read now (relative to the skill dir)
     read_when            [{path, when}] references to read if a condition holds
@@ -956,6 +957,68 @@ def scan_mobile(scan: Scan, found: Findings) -> None:
         found.add("mobile", "android", "AndroidManifest.xml")
 
 
+SERVERLESS_HOSTING = {"vercel", "netlify", "cloudflare", "aws-lambda", "aws-sst", "aws-opennext", "aws-amplify", "firebase", "fastly"}
+
+
+def scan_instances(scan: Scan, found: Findings) -> dict:
+    """How many app instances run: decides whether in-process caches are safe and whether
+    framework caches need a shared store. Reads k8s/Helm, compose, Fly, Render and ECS config."""
+    counts: list[int] = []
+    maxes: list[int] = []
+    evidence: list[str] = []
+
+    def note(n: int, where: str, kind: str = "replicas") -> None:
+        (maxes if kind == "max" else counts).append(n)
+        evidence.append(f"{where}: {kind}={n}")
+
+    for path in scan.files:
+        rel = scan.rel(path)
+        name = path.name
+        if path.suffix in (".yaml", ".yml"):
+            text = read_text(path, 256 * 1024)
+            for doc in re.split(r"(?m)^---\s*$", text):
+                if re.search(r"(?m)^kind:\s*(Deployment|StatefulSet|Rollout|ReplicaSet)\b", doc):
+                    m = re.search(r"(?m)^\s+replicas:\s*(\d+)", doc)
+                    if m:
+                        note(int(m.group(1)), rel)
+                elif re.search(r"(?m)^kind:\s*HorizontalPodAutoscaler\b", doc):
+                    lo = re.search(r"(?m)^\s+minReplicas:\s*(\d+)", doc)
+                    hi = re.search(r"(?m)^\s+maxReplicas:\s*(\d+)", doc)
+                    if lo:
+                        note(int(lo.group(1)), rel, "min")
+                    if hi:
+                        note(int(hi.group(1)), rel, "max")
+            if name in ("values.yaml", "values.yml"):
+                m = re.search(r"(?m)^replicaCount:\s*(\d+)", text)
+                if m:
+                    note(int(m.group(1)), rel, "replicaCount")
+            if re.search(r"(^|/)(docker-)?compose[^/]*\.ya?ml$", rel):
+                for m in re.finditer(r"(?m)^\s+(?:replicas|scale):\s*(\d+)", text):
+                    note(int(m.group(1)), rel)
+            if name == "render.yaml":
+                for m in re.finditer(r"(?m)^\s+(numInstances|minInstances|maxInstances):\s*(\d+)", text):
+                    note(int(m.group(2)), rel, "max" if m.group(1) == "maxInstances" else m.group(1))
+        elif name == "fly.toml":
+            m = re.search(r"(?m)^\s*min_machines_running\s*=\s*(\d+)", read_text(path))
+            if m:
+                note(int(m.group(1)), rel, "min_machines_running")
+        elif path.suffix == ".tf":
+            text = read_text(path)
+            for m in re.finditer(r"\bdesired_count\s*=\s*(\d+)", text):
+                note(int(m.group(1)), rel, "desired_count")
+            for m in re.finditer(r"\bmax_capacity\s*=\s*(\d+)", text):
+                note(int(m.group(1)), rel, "max")
+    serverless = bool(set(found.items.get("hosting", {})) & SERVERLESS_HOSTING)
+    all_counts = counts + maxes
+    return {
+        "min": min(counts) if counts else None,
+        "max": max(all_counts) if all_counts else None,
+        "serverless": serverless,
+        "evidence": evidence[:10],
+        "multiple": serverless or (max(all_counts) > 1 if all_counts else False),
+    }
+
+
 def scan_hosting_and_infra(scan: Scan, found: Findings, notes: list[str]) -> None:
     file_signals = {
         "vercel.json": ("hosting", "vercel"),
@@ -1464,6 +1527,21 @@ def detect(root: Path) -> dict:
     scan_ci(scan, found)
     inspect_framework_configs(scan, found, notes)
     structural_hints(scan, found)
+    instances = scan_instances(scan, found)
+    if instances["serverless"]:
+        notes.append("Runs on serverless/edge instances: module-scope memory is per instance and short-lived (an opportunistic L1 only). "
+                     "Use the platform's shared caches (Vercel/Netlify framework caches, Workers Cache/KV) or Redis for anything shared.")
+    elif instances["multiple"]:
+        notes[:] = [n for n in notes if not n.startswith("Next.js standalone output without a cacheHandler")]
+        notes.append(f"Runs up to {instances['max']} instances: in-process caches differ per instance (keep L1 TTLs short or invalidate via pub/sub); "
+                     "framework caches need a shared store (Next.js cacheHandler/cacheHandlers, Rails Solid Cache/Redis, Django Redis).")
+    if instances["multiple"]:
+        nxt = found.frameworks.get("nextjs")
+        if nxt and not instances["serverless"] and not (nxt["config"].get("cacheHandler") or nxt["config"].get("cacheHandlers")):
+            notes.append("Next.js on several self-hosted instances without cacheHandler/cacheHandlers: revalidateTag/ISR only "
+                         "update the instance that received the call. Add a shared cache handler (assets/snippets/frameworks/nextjs-cache-handler.mjs).")
+    elif instances["max"] is None and not instances["serverless"]:
+        notes.append("Instance count unknown: ask how many app instances/pods run in production (in-process caches drift across instances).")
     for fw, orm in (("django", "django-orm"), ("rails", "active-record"), ("laravel", "eloquent"), ("phoenix", "ecto")):
         if found.fw(fw):
             found.add("orm", orm, f"implied by {fw}")
@@ -1496,6 +1574,7 @@ def detect(root: Path) -> dict:
         "ai": as_list("ai"),
         "ci": as_list("ci"),
         "service_worker": as_list("service_worker"),
+        "instances": instances,
         "archetype_candidates": archetypes(found, declared),
         "read": read,
         "read_when": read_when,

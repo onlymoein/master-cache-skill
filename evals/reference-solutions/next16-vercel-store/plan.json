@@ -1,0 +1,295 @@
+{
+  "schema_version": "1.0",
+  "app": {
+    "name": "store",
+    "archetype": "ecommerce",
+    "stack": {
+      "frameworks": [
+        "next@16.4.3 (cacheComponents)"
+      ],
+      "hosting": [
+        "vercel"
+      ],
+      "cdn": [
+        "vercel"
+      ],
+      "data_stores": [
+        "postgres via prisma"
+      ]
+    },
+    "generated": "2026-10-28"
+  },
+  "constraints": {
+    "tenancy": "single",
+    "sensitive_classes": [
+      "payment",
+      "auth"
+    ],
+    "compliance": [
+      "pci-dss"
+    ],
+    "instances": null
+  },
+  "routes": [
+    {
+      "id": "R1",
+      "pattern": "/_next/static/*",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "data_class": "fingerprinted-asset",
+      "audience": "public",
+      "staleness_budget_seconds": null,
+      "browser": {
+        "cache_control": "public, max-age=31536000, immutable"
+      },
+      "shared": {
+        "layer": "cdn",
+        "header": "Cache-Control",
+        "value": "public, max-age=31536000, immutable",
+        "ttl_seconds": 31536000
+      },
+      "vary": [
+        "Accept-Encoding"
+      ],
+      "cache_key": {
+        "query_allowlist": [],
+        "normalize": []
+      },
+      "app_cache": null,
+      "tags": [],
+      "invalidation": {
+        "trigger": "deploy",
+        "mechanism": "new hashed URL per build (Next default; can't be overridden)",
+        "propagation_seconds": 0
+      },
+      "decision_step": 3,
+      "owner": "platform",
+      "verify": [
+        "curl -sI https://store.example.com/_next/static/chunks/main-<hash>.js | grep -i cache-control"
+      ]
+    },
+    {
+      "id": "R2",
+      "pattern": "/products/[slug]",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "data_class": "public-html-volatile",
+      "audience": "public",
+      "staleness_budget_seconds": 60,
+      "browser": {
+        "cache_control": "private, no-cache, no-store, max-age=0, must-revalidate"
+      },
+      "shared": {
+        "layer": "none",
+        "header": null,
+        "value": null,
+        "ttl_seconds": null
+      },
+      "vary": [],
+      "cache_key": null,
+      "app_cache": {
+        "layer": "framework",
+        "mechanism": "'use cache' + cacheLife('hours') + cacheTag('product-slug:{slug}', 'product:{id}', 'category:{id}') on getProduct/getRelated; currency read from cookies() outside the cached scope inside <Suspense>",
+        "key_pattern": null,
+        "ttl_seconds": 3600,
+        "stampede": "framework single-flight + swr"
+      },
+      "tags": [
+        "product:{id}",
+        "product-slug:{slug}",
+        "category:{id}",
+        "all"
+      ],
+      "invalidation": {
+        "trigger": "product.updated CMS webhook",
+        "mechanism": "revalidateTag('product:{id}', 'max') in the signed webhook Route Handler (product-slug:{slug} on create); Vercel follows the tag",
+        "propagation_seconds": 30
+      },
+      "decision_step": 5,
+      "owner": "storefront",
+      "verify": [
+        "curl -s -o /dev/null -D - https://store.example.com/products/x | grep -iE 'cache-control|x-vercel-cache|x-nextjs'",
+        "python scripts/probe_headers.py https://store.example.com/products/x"
+      ],
+      "notes": "The page reads the currency cookie, so the HTML response is dynamic (private, no-store) and Vercel serves the static shell via PPR; the expensive product/related queries come from the framework cache, not the database."
+    },
+    {
+      "id": "R3",
+      "pattern": "/cart",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "data_class": "personalized",
+      "audience": "personalized",
+      "staleness_budget_seconds": 0,
+      "browser": {
+        "cache_control": "private, no-cache, no-store, max-age=0, must-revalidate"
+      },
+      "shared": {
+        "layer": "none",
+        "header": null,
+        "value": null,
+        "ttl_seconds": null
+      },
+      "vary": [],
+      "cache_key": null,
+      "app_cache": null,
+      "tags": [],
+      "invalidation": {
+        "trigger": "none",
+        "mechanism": "none (rendered per request from the session)",
+        "propagation_seconds": null
+      },
+      "decision_step": 2,
+      "owner": "checkout",
+      "verify": [
+        "python scripts/probe_headers.py https://store.example.com/cart --cookie-a \"$SESSION_A\" --cookie-b \"$SESSION_B\""
+      ]
+    },
+    {
+      "id": "R4",
+      "pattern": "/checkout",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "data_class": "sensitive",
+      "audience": "sensitive",
+      "staleness_budget_seconds": 0,
+      "browser": {
+        "cache_control": "private, no-cache, no-store, max-age=0, must-revalidate"
+      },
+      "shared": {
+        "layer": "none",
+        "header": null,
+        "value": null,
+        "ttl_seconds": null
+      },
+      "vary": [],
+      "cache_key": null,
+      "app_cache": null,
+      "tags": [],
+      "invalidation": {
+        "trigger": "none",
+        "mechanism": "none (forced dynamic with connection(); never prerendered)",
+        "propagation_seconds": null
+      },
+      "decision_step": 1,
+      "owner": "checkout",
+      "verify": [
+        "curl -sI https://store.example.com/checkout | grep -i 'no-store'"
+      ]
+    },
+    {
+      "id": "R5",
+      "pattern": "POST /api/cms-webhook",
+      "methods": [
+        "POST"
+      ],
+      "data_class": "mutation",
+      "audience": "public",
+      "staleness_budget_seconds": 0,
+      "browser": {
+        "cache_control": "no-store"
+      },
+      "shared": {
+        "layer": "none",
+        "header": null,
+        "value": null,
+        "ttl_seconds": null
+      },
+      "vary": [],
+      "cache_key": null,
+      "app_cache": null,
+      "tags": [],
+      "invalidation": {
+        "trigger": "this route is the trigger",
+        "mechanism": "HMAC-checked; emits revalidateTag('product:{slug}', 'max')",
+        "propagation_seconds": null
+      },
+      "decision_step": 0,
+      "owner": "storefront",
+      "verify": [
+        "curl -s -o /dev/null -w '%{http_code}' -X POST https://store.example.com/api/cms-webhook -d '{}'  # expect 401"
+      ]
+    }
+  ],
+  "invalidation_map": [
+    {
+      "event": "product.updated",
+      "entities": [
+        "product",
+        "category"
+      ],
+      "keys_or_tags": [
+        "product:{id}",
+        "category:{id}"
+      ],
+      "order": [
+        "CMS/DB commit",
+        "webhook → revalidateTag(tag, 'max')",
+        "Vercel CDN follows the tag"
+      ],
+      "mechanism": "CMS webhook (HMAC) → Route Handler",
+      "propagation_seconds": 30,
+      "owner": "storefront"
+    },
+    {
+      "event": "product.created",
+      "entities": [
+        "product"
+      ],
+      "keys_or_tags": [
+        "product-slug:{slug}"
+      ],
+      "order": [
+        "CMS/DB commit",
+        "webhook → revalidateTag('product-slug:{slug}', 'max')"
+      ],
+      "mechanism": "same webhook; clears a cached not-found result",
+      "propagation_seconds": 30,
+      "owner": "storefront"
+    }
+  ],
+  "phases": [
+    {
+      "phase": 0,
+      "name": "Safety: checkout forced dynamic + no-store; webhook signature check",
+      "routes": [
+        "R4",
+        "R5"
+      ],
+      "rollback": "revert the commit"
+    },
+    {
+      "phase": 5,
+      "name": "Cache product and related queries with 'use cache' + tags; Suspense around cookie reads; partialPrefetching",
+      "routes": [
+        "R2"
+      ],
+      "rollback": "remove the 'use cache' directives (one commit)"
+    }
+  ],
+  "monitoring": [
+    {
+      "metric": "p95 TTFB /products/*",
+      "target": "< 300 ms",
+      "source": "Vercel Speed Insights"
+    },
+    {
+      "metric": "database queries per product view",
+      "target": "~0 on warm cache",
+      "source": "Prisma query log"
+    },
+    {
+      "metric": "publish-to-fresh latency",
+      "target": "p95 <= 60 s",
+      "source": "synthetic check after webhook"
+    }
+  ]
+}

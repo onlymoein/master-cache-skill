@@ -49,6 +49,7 @@ Netlify-Vary: query=page|sort
 8. Never opt sensitive content out of deploy invalidation (`Netlify-Cache-ID`); it could stay publicly cached after a fix.
 9. `netlify dev` doesn't emulate the CDN cache; test on a deploy preview.
 10. Purge rate limit: each tag (or the site) can be purged twice per 5 seconds; beyond that you get 429s. Debounce webhook purges.
+11. Browsers get `Cache-Control: public, max-age=0, must-revalidate` for static files by default, which is right for `index.html` and other fixed URLs. Fingerprinted build assets need an explicit `Cache-Control: public, max-age=31536000, immutable` rule for their path in `netlify.toml` `[[headers]]` or `_headers`. Netlify's own build-asset handling may already add it for some frameworks; check with `curl -I`.
 
 ## Headers and variants
 

@@ -3,8 +3,8 @@ name: caching-strategy
 description: Designs, audits and implements caching for a specific website or app across every layer, including HTTP/browser headers (Cache-Control, ETag, Vary), service workers, CDNs and edge (Cloudflare, Vercel, Netlify, Fastly, CloudFront, Akamai), nginx/Varnish, in-process and Redis/Valkey/Memcached caches, database and ORM caches, framework caching (Next.js use cache/ISR, Nuxt, SvelteKit, Astro, Rails, Django, Laravel, Spring, ASP.NET), CMS, REST/GraphQL APIs, mobile clients, LLM prompt and semantic caching, and CI build caches. Detects the stack, classifies every route, and writes a validated caching plan covering invalidation, stampede protection, cache security and verification. Use when the user mentions caching, stale content, purging, CDN or Redis setup, or when pages are slow, TTFB is high, or origin, database or hosting costs are too high, even if they never say "cache". Not for clearing local package-manager caches or explaining CPU caches.
 compatibility: Live header probes need network access and user-supplied URLs; every other step runs offline with the Python 3 standard library.
 metadata:
-  version: "1.0.0"
-  last-reviewed: "2026-10-27"
+  version: "1.1.0"
+  last-reviewed: "2026-10-28"
 ---
 
 # Caching strategy
@@ -45,7 +45,7 @@ Ask before assuming when it changes the plan: who may see the response (public v
 
 | Command | Output |
 |---|---|
-| `python scripts/detect_stack.py <repo>` | Frameworks with versions and config (Next `cacheComponents`, SvelteKit adapter, …), hosting/CDN, proxies, data stores, ORM, CMS, API, mobile, AI, CI, service workers, archetype candidates, `read` and `read_when` reference lists |
+| `python scripts/detect_stack.py <repo>` | Frameworks with versions and config (Next `cacheComponents`, SvelteKit adapter, …), hosting/CDN, proxies, data stores, ORM, CMS, API, mobile, AI, CI, service workers, instance count (k8s, compose, Fly, Render, ECS, serverless), archetype candidates, `read` and `read_when` reference lists |
 | `python scripts/find_cache_primitives.py <repo> [--layer L]` | Existing caching code/config with `file:line`, layer, kind; heuristic warnings (one-argument `revalidateTag`, `Vary: Cookie`, `KEYS`, unbounded LRU, module-level DataLoader, …) |
 | `python scripts/probe_headers.py <url>... [--cookie-a 'k=v'] [--cookie-b 'k=v'] [--deception]` | Read-only live probe: repeat GETs (MISS→HIT, `Age`), conditional GET, header findings, two-session leak test, web cache deception probes. Cookie values are never printed. Only for URLs the user owns or is authorized to test |
 | `python scripts/validate_plan.py plan.json` | `{valid, errors, warnings}`; exit 1 on errors (shared caching of private data, TTL over budget, missing invalidation/owner/verify, bad tags, `Vary: Cookie`, …) |

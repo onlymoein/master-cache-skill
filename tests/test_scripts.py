@@ -186,6 +186,16 @@ class ValidatePlanTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("shared-ttl-over-budget", {e["rule"] for e in d["errors"]})
 
+    def test_framework_default_header_not_kitchen_sink(self):
+        plan = json.loads((SKILL / "assets" / "plan.example.json").read_text())
+        plan["routes"][2]["browser"]["cache_control"] = "private, no-cache, no-store, max-age=0, must-revalidate"
+        code, d, _ = run("validate_plan.py", "-", stdin=json.dumps(plan))
+        self.assertEqual(code, 0, d)
+        self.assertNotIn("kitchen-sink-headers", {w["rule"] for w in d["warnings"]})
+        plan["routes"][2]["browser"]["cache_control"] = "no-store, no-cache, must-revalidate"
+        code, d, _ = run("validate_plan.py", "-", stdin=json.dumps(plan))
+        self.assertIn("kitchen-sink-headers", {w["rule"] for w in d["warnings"]})
+
     def test_invalid_json(self):
         code, d, _ = run("validate_plan.py", "-", stdin="{")
         self.assertEqual(code, 1)
@@ -262,6 +272,10 @@ class FakeEdge(BaseHTTPRequestHandler):
                     self.shared[path] = (body, {})
                 return self.send(200, body, {"Content-Type": "text/html", "Cache-Control": "private, no-cache", "X-Cache": "MISS"})
             return self.send(200, body, {"Content-Type": "text/html", "Cache-Control": "private, no-cache"})
+        if path.startswith("/nextdyn"):
+            return self.send(200, b"dynamic", {"Content-Type": "text/html", "x-nextjs-prerender": "1",
+                                               "Vary": "rsc, next-router-state-tree, Accept-Encoding",
+                                               "Cache-Control": "private, no-cache, no-store, max-age=0, must-revalidate"})
         if path.startswith("/nocc"):
             return self.send(200, b"x", {"Content-Type": "text/html", "Set-Cookie": "tracking=secretvalue; Path=/"})
         return self.send(404, b"nope", {"Cache-Control": "no-store"})
@@ -317,6 +331,10 @@ class ProbeHeadersTest(unittest.TestCase):
         r = out["results"][0]
         self.assertIn("missing-cache-control", {f["rule"] for f in r["findings"]})
         self.assertNotIn("secretvalue", json.dumps(out))
+
+    def test_nextjs_default_header_not_flagged(self):
+        r = self.probe(self.base + "/nextdyn")["results"][0]
+        self.assertNotIn("kitchen-sink", {f["rule"] for f in r["findings"]})
 
     def test_bad_usage(self):
         self.assertEqual(run("probe_headers.py", "ftp://example.com")[0], 2)

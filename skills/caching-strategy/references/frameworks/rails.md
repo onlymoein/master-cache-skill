@@ -9,6 +9,7 @@ Last reviewed: 2026-10-27 · Applies to: Rails 8.1.x (8.0 security-only since Ma
 - Default recipe
 - Rules and gotchas
 - HTTP caching helpers
+- CDN purge on change
 - Version notes
 - Verify
 - Sources
@@ -92,6 +93,46 @@ Default headers for every response: `assets/snippets/headers/rails_cache_headers
 
 Set CDN TTLs separately with `response.headers["CDN-Cache-Control"] = "max-age=300, stale-while-revalidate=3600"` (or the vendor header) on public routes.
 
+## CDN purge on change
+
+A long shared TTL is only safe with event-driven purges. Purge after the transaction commits, from a background job, by surrogate key/tag (Fastly shown; same shape for Cloudflare tags, `references/platforms/*.md`):
+
+```ruby
+class ArticlesController < ApplicationController
+  def show
+    @article = Article.find(params[:id])
+    expires_now                                                     # browsers: Cache-Control: no-cache
+    response.headers["Surrogate-Control"] = "max-age=86400, stale-while-revalidate=60, stale-if-error=86400"
+    response.headers["Surrogate-Key"] = "article-#{@article.id} section-#{@article.section_id} all"
+    fresh_when @article                                             # ETag/Last-Modified → 304s
+  end
+end
+
+class Article < ApplicationRecord
+  has_many :comments
+  after_commit -> { CdnPurgeJob.perform_later(["article-#{id}", "section-#{section_id}"]) }
+end
+
+class Comment < ApplicationRecord
+  belongs_to :article, touch: true   # touch runs the article's commit callbacks → purge
+end
+
+class CdnPurgeJob < ApplicationJob
+  retry_on StandardError, wait: :polynomially_longer, attempts: 5
+  def perform(keys)
+    uri = URI("https://api.fastly.com/service/#{ENV.fetch('FASTLY_SERVICE_ID')}/purge")
+    res = Net::HTTP.post(uri, { surrogate_keys: keys }.to_json,
+                         "Fastly-Key" => ENV.fetch("FASTLY_API_TOKEN"), "Fastly-Soft-Purge" => "1",
+                         "Content-Type" => "application/json")
+    raise "purge failed: #{res.code}" unless res.is_a?(Net::HTTPSuccess)
+  end
+end
+```
+
+- Purge in `after_commit`, never `after_save`: a purge before commit lets the CDN refetch the old row.
+- Soft purge keeps serving stale (with `stale-if-error`) if the origin is down; hard purge only for takedowns.
+- Measure publish-to-visible time after each change (see Verify).
+
 ## Version notes
 
 - Rails 8: Solid Cache default. 8.1: cache store namespace getter/setter. 8.1.2: LocalCache strategy on `MemoryStore`.
@@ -110,6 +151,8 @@ Set CDN TTLs separately with `response.headers["CDN-Cache-Control"] = "max-age=3
 bin/rails runner 'p Rails.cache.class; p Rails.cache.fetch("probe", expires_in: 5) { 42 }'
 curl -s -o /dev/null -D - https://example.com/articles/1 | grep -iE 'cache-control|etag|last-modified'
 curl -s -o /dev/null -D - -H 'Cookie: _app_session=x' https://example.com/account.css | grep -iE 'cache-control|age|x-cache'
+# publish-to-visible: update a record, then poll until the CDN serves it
+start=$(date +%s); until curl -s https://example.com/articles/1 | grep -q 'NEW TITLE'; do sleep 2; done; echo "$(( $(date +%s) - start )) s"
 ```
 
 ## Sources

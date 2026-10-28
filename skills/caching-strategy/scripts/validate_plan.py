@@ -44,6 +44,8 @@ NONE_WORDS = {"", "none", "n/a", "na", "-", "null", "no", "nothing"}
 TTL_TRIGGER = re.compile(r"^\s*(ttl|time|timer|expiry|expire|expiration|max-age|none)\b", re.I)
 KEY_CONVENTION = re.compile(r"^[a-z0-9][a-z0-9_-]*:[a-z0-9{}_-]+:v[0-9{}]+:")
 TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_.:/{}-]*$")
+# Headers frameworks emit themselves for dynamic responses; the app can't trim them, so no kitchen-sink warning.
+FRAMEWORK_DEFAULT_HEADERS = {"private,no-cache,no-store,max-age=0,must-revalidate"}  # Next.js dynamic routes
 
 
 # --------------------------------------------------------------------------- mini JSON Schema
@@ -287,7 +289,8 @@ def check_route(i: int, r: dict, plan: dict, errors: list, warnings: list) -> bo
             e("tenant-missing-from-key",
               "Multi-tenant plan: app-cache key for a non-public route must include the tenant (t:{tenant}).", ".app_cache.key_pattern")
     # 10. warnings
-    if re.search(r"no-store", browser_cc, re.I) and len(bcc) >= 3:
+    framework_default = browser_cc.replace(" ", "").lower() in FRAMEWORK_DEFAULT_HEADERS
+    if re.search(r"no-store", browser_cc, re.I) and len(bcc) >= 3 and not framework_default:
         w("kitchen-sink-headers", "`Cache-Control: no-store` alone is enough; drop no-cache/must-revalidate/max-age=0 (and Pragma/Expires).",
           ".browser.cache_control")
     stack = plan.get("app", {}).get("stack", {}) or {}

@@ -42,6 +42,20 @@ class EvalFixturesTest(unittest.TestCase):
                 for ref in refs:
                     self.assertIn(f"references/{ref}", data["read"])
 
+    def test_instance_counts(self):
+        expected = {"next15-k8s-cloudfront": (4, False), "django-saas-redis": (3, False), "next16-vercel-store": (None, True)}
+        for fixture, (max_instances, serverless) in expected.items():
+            with self.subTest(fixture=fixture):
+                proc = subprocess.run([sys.executable, str(DETECT), str(EVALS / "fixtures" / fixture)],
+                                      capture_output=True, text=True, timeout=60)
+                data = json.loads(proc.stdout)
+                self.assertEqual(data["instances"]["max"], max_instances)
+                self.assertEqual(data["instances"]["serverless"], serverless)
+                self.assertTrue(data["instances"]["multiple"])
+        proc = subprocess.run([sys.executable, str(DETECT), str(EVALS / "fixtures" / "next15-k8s-cloudfront")],
+                              capture_output=True, text=True, timeout=60)
+        self.assertTrue(any("cacheHandler" in n and "several" in n for n in json.loads(proc.stdout)["notes"]))
+
     def test_scanner_flags_planted_problems(self):
         scanner = DETECT.parent / "find_cache_primitives.py"
         planted = {

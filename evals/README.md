@@ -20,6 +20,8 @@ The skill-creator format: each case has a `prompt`, an `expected_output` descrip
 
 Run each case with and without the skill (baseline), on Haiku, Sonnet and Opus. Haiku shows whether the router reads only the references `detect_stack.py` lists. Grade only on evidence; a missing expectation fails even if the answer is otherwise good.
 
+Reference solution: `reference-solutions/next16-vercel-store/` holds a full run of the skill on eval 1 (findings, plan, `plan.json` and code changes), built and checked against real Next.js 16.4.3. Its README lists what was verified. Use it to calibrate graders.
+
 Fixture sanity is unit-tested: `tests/test_evals.py` checks that `detect_stack.py` gives each fixture the intended archetype and references, and that the eval files are well-formed.
 
 ## Trigger evals (`trigger_queries.json`)

@@ -35,7 +35,7 @@ When `next` is a dependency. Prefer the project's bundled docs when present: Nex
 | Yes | **Cache Components** (everything dynamic until opted in; Partial Prerendering is the default rendering) | `'use cache'`, `'use cache: remote'`, `'use cache: private'`, `cacheLife`, `cacheTag` |
 | No | **Previous model** | `fetch` cache options, `unstable_cache`, segment `revalidate`/`dynamic`/`fetchCache`, ISR, `React.cache` |
 
-Never add `'use cache'` to an app without the flag. Enabling `cacheComponents` is a migration: it surfaces build errors for uncached data outside `<Suspense>`. Recommend it as its own phase, not a side effect. Current docs say new `create-next-app` apps have it on by default (with `partialPrefetching`, introduced in 16.3); which minor made that the default wasn't confirmed.
+Never add `'use cache'` to an app without the flag. Enabling `cacheComponents` is a migration: it surfaces build errors for uncached data outside `<Suspense>`. Recommend it as its own phase, not a side effect. Current docs say new `create-next-app` apps have it on by default (with `partialPrefetching`, introduced in 16.3); which minor made that the default wasn't confirmed. Set `partialPrefetching` explicitly next to `cacheComponents` (`true` for new apps; `false` only for apps that adopted Cache Components before it existed): unset behaves like `false` and `next build` warns (verified on 16.4.3).
 
 ## Default recipe: Cache Components model
 
@@ -110,6 +110,9 @@ Pages Router: `getStaticProps` returns `{ props, revalidate: 60 }`; on-demand `a
 9. Tags are case-sensitive, ≤ 256 chars (longer tags are silently never assigned), ≤ 128 per `fetch`.
 10. Bots detected by user agent skip the static shell and render dynamically; if build-time data sources are unavailable at runtime they get 500s.
 11. `revalidateTag`/`revalidatePath` don't purge a CDN you run yourself. "Revalidation works locally but not in production" almost always means a CDN copy is still being served.
+12. Cache Components build check: `cookies()`, `headers()`, `connection()`, `searchParams`, unknown `params` or uncached data read outside `<Suspense>` fails `next build` ("blocking-prerender-dynamic"). Fix per route: wrap the read in `<Suspense>` (static shell + streamed hole; right for carts and dashboards), cache the data with `'use cache'`, or `export const instant = false` for routes that should render on every request with no shell (checkout, payment).
+13. One request-data read anywhere in a route makes its HTML response `private, no-cache, no-store, max-age=0, must-revalidate`, even when a PPR shell was prerendered (verified with `next start` on 16.4.3). Only PPR-aware hosts (Vercel) serve the shell from their edge. To make HTML cacheable at a generic CDN, move the variant into the URL (`/[currency]/products/[slug]`) or into client code so the route is fully static.
+14. `'use cache'` also caches "not found" (`null`) results for the whole `cacheLife`. Tag cached lookups by their lookup key (`product-slug:{slug}`) as well as the entity ID, and revalidate that tag on create; otherwise a new item 404s until expiry.
 
 ## Invalidation APIs
 

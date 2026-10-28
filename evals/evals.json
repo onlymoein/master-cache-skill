@@ -5,8 +5,10 @@
       "id": 1,
       "name": "next16-vercel-store",
       "prompt": "Product pages on our store feel slow and our Vercel bill jumped last month. The repo is in fixtures/next16-vercel-store. What should we change?",
-      "expected_output": "Runs detect_stack, identifies Next.js 16.4.3 with cacheComponents on Vercel and an ecommerce archetype. Plans product data with 'use cache' + cacheLife + cacheTag (currency read outside the cached scope and passed as an argument), fixes the one-argument revalidateTag in the CMS webhook to revalidateTag(tag, 'max') with a signature check, keeps cart private and checkout no-store, and gives verification commands.",
-      "files": ["fixtures/next16-vercel-store"],
+      "expected_output": "Runs detect_stack, identifies Next.js 16.4.3 with cacheComponents on Vercel and an ecommerce archetype. Plans product data with 'use cache' + cacheLife + cacheTag (currency read outside the cached scope and passed as an argument), fixes the one-argument revalidateTag in the CMS webhook to revalidateTag(tag, 'max') with a signature check, keeps cart private and checkout no-store, and gives verification commands. The reference solution in reference-solutions/next16-vercel-store builds and passes these checks on Next 16.4.3.",
+      "files": [
+        "fixtures/next16-vercel-store"
+      ],
       "expectations": [
         "The response runs or cites scripts/detect_stack.py output and names Next.js 16.4.3 with cacheComponents enabled",
         "Product data is cached with 'use cache' together with cacheLife and cacheTag (e.g. product:{id}), not with unstable_cache or segment revalidate",
@@ -14,6 +16,7 @@
         "The one-argument revalidateTag(`product-${id}`) in app/api/cms-webhook/route.ts is flagged and replaced with revalidateTag(tag, 'max') (or { expire: 0 }); updateTag is not used in the Route Handler",
         "The webhook gains a secret or signature check",
         "The cart is private (private, no-cache or not shared-cached) and checkout is no-store",
+        "Request-data reads (the currency cookie, the cart session) sit inside <Suspense>, or the route exports instant = false, so next build passes under Cache Components; checkout renders per request",
         "No public, s-maxage or CDN TTL is proposed for the cart, checkout or any session-dependent response",
         "Each proposed cacheable route states its invalidation and a verification command (curl for x-vercel-cache/Age or similar)"
       ]
@@ -23,7 +26,9 @@
       "name": "next15-k8s-cloudfront",
       "prompt": "revalidateTag works locally but production keeps serving old blog posts after we publish in Contentful. See fixtures/next15-k8s-cloudfront.",
       "expected_output": "Explains that production runs 4 replicas behind CloudFront with the CachingOptimized policy (default TTL 1 day): revalidateTag only clears one pod's local cache and never purges CloudFront. Recommends a shared cacheHandler (Redis) for multi-instance ISR, CloudFront invalidation (or short s-maxage with SWR) after revalidation, correct RSC variant keying, and does not suggest 'use cache' (Next 15 without cacheComponents).",
-      "files": ["fixtures/next15-k8s-cloudfront"],
+      "files": [
+        "fixtures/next15-k8s-cloudfront"
+      ],
       "expectations": [
         "Names the CloudFront copy (CachingOptimized policy, long default TTL) as a cause of stale content after revalidation",
         "Names per-pod caches across the 4 replicas as a cause, and recommends a shared cacheHandler (e.g. Redis) or equivalent",
@@ -38,7 +43,9 @@
       "name": "django-saas-redis",
       "prompt": "Our Django dashboards are slow. Can you add caching? Code is in fixtures/django-saas-redis.",
       "expected_output": "Finds cache_page on a login-required view and a global 'dashboard_stats' key shared across organizations (a cross-tenant leak). Replaces them with per-tenant cache-aside keys ({app}:{env}:v1:t:{org_id}:dashboard_stats) with jitter and single-flight/lock, invalidation on invoice writes, private, no-cache + ETag for the response, and pins Django to the latest 6.0.x patch (6.0.7+, CVE-2026-48588).",
-      "files": ["fixtures/django-saas-redis"],
+      "files": [
+        "fixtures/django-saas-redis"
+      ],
       "expectations": [
         "Flags @cache_page on the @login_required dashboard view as unsafe (it doesn't vary on cookies/auth) and removes it",
         "Flags the global cache key 'dashboard_stats' as a cross-tenant data leak",
@@ -54,7 +61,9 @@
       "name": "rails-news-fastly",
       "prompt": "Breaking news takes minutes to show up on our site behind Fastly, and new comments sometimes never appear. Repo: fixtures/rails-news-fastly.",
       "expected_output": "Explains that expires_in 10.minutes public sets a 10-minute shared TTL with no purge, and that the Russian-doll fragment cache doesn't expire because Comment lacks touch: true. Recommends Surrogate-Control with a long TTL plus Surrogate-Key per article and soft purge on publish/update (after commit), stale-while-revalidate and stale-if-error, browser no-cache, touch: true on comments, and a purge-to-visible verification.",
-      "files": ["fixtures/rails-news-fastly"],
+      "files": [
+        "fixtures/rails-news-fastly"
+      ],
       "expectations": [
         "Identifies expires_in 10.minutes, public: true as a 10-minute shared TTL with no event-driven purge",
         "Adds belongs_to :article, touch: true on Comment (or equivalent) so the article fragment key changes when comments change",
@@ -69,7 +78,9 @@
       "name": "wordpress-apo",
       "prompt": "cf-cache-status is always BYPASS on our WordPress site even though we pay for Cloudflare APO. Repo: fixtures/wordpress-apo.",
       "expected_output": "Diagnoses the A/B Banner plugin setting a cookie on every request (Set-Cookie on anonymous pages makes Cloudflare bypass), recommends removing it or moving the bucket assignment client-side/edge, keeping one page-cache layer (APO vs the advanced-cache.php drop-in), adding a persistent object cache (Redis), and verifying with curl for cf-cache-status HIT and BYPASS on logged-in cookies.",
-      "files": ["fixtures/wordpress-apo"],
+      "files": [
+        "fixtures/wordpress-apo"
+      ],
       "expectations": [
         "Identifies the ab-banner plugin's setcookie on every anonymous request as the cause of BYPASS",
         "Proposes removing the cookie from anonymous cacheable responses (client-side or edge bucketing, or setting it only where needed)",
@@ -84,7 +95,9 @@
       "name": "express-apollo-graphql",
       "prompt": "Our GraphQL API is hammering Postgres. Cut the database load. Code: fixtures/express-apollo-graphql.",
       "expected_output": "Flags the module-level DataLoader (cross-request/cross-user cache) and moves it into the per-request context; upgrades Apollo Server 4 (EOL 2026-01-26) to v5; adds @cacheControl hints with default maxAge 0 and PRIVATE for `me`; adds responseCachePlugin with sessionId from Authorization; persisted queries over GET (APQ or trusted documents) for CDN caching of public operations; app-level cache-aside for hot book lists with invalidation.",
-      "files": ["fixtures/express-apollo-graphql"],
+      "files": [
+        "fixtures/express-apollo-graphql"
+      ],
       "expectations": [
         "Flags the module-level authorLoader DataLoader as shared across requests/users and creates loaders per request in the context",
         "Notes Apollo Server 4 is end-of-life and recommends @apollo/server 5",
@@ -99,7 +112,9 @@
       "name": "expo-avatars",
       "prompt": "Users of our Expo app see their old avatar for days after changing it. Code: fixtures/expo-avatars.",
       "expected_output": "Explains that the avatar URL is stable while its content is overwritten, so expo-image's disk cache (no TTL) and the CDN keep serving the old image, and staleTime: Infinity keeps the old user object. Recommends versioned avatar URLs or cacheKey (e.g. ?v=<version> or a content hash in the key), invalidating the user query after upload, server-driven Cache-Control and ETag on the API, and not hard-coding long client TTLs.",
-      "files": ["fixtures/expo-avatars"],
+      "files": [
+        "fixtures/expo-avatars"
+      ],
       "expectations": [
         "Identifies the stable avatar URL with overwritten content as the root cause",
         "Recommends a versioned URL or expo-image cacheKey that changes when the avatar changes (version or content hash)",
@@ -113,7 +128,9 @@
       "name": "rag-support-bot",
       "prompt": "Our Claude-powered support bot costs too much. Can caching help? Code: fixtures/rag-support-bot.",
       "expected_output": "Explains that the system prompt starts with the current time and per-request retrieved context, so no prefix is reusable; reorders to put the stable ~20k-token policy docs first with a cache_control breakpoint, moves time/tenant/retrieval after it or into the user turn, tracks cache_read_input_tokens as the KPI, and recommends exact-match response caching (keyed by tenant, model and prompt version) before any semantic cache, with tenant isolation.",
-      "files": ["fixtures/rag-support-bot"],
+      "files": [
+        "fixtures/rag-support-bot"
+      ],
       "expectations": [
         "Identifies the timestamp (and per-request context) at the start of the system prompt as preventing prompt-cache hits",
         "Reorders the prompt so the stable policy documents come first, followed by variable content",
