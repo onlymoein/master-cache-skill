@@ -3,6 +3,10 @@
 All notable changes to the `caching-strategy` skill. Versions follow `metadata.version` in
 `skills/caching-strategy/SKILL.md` and the plugin version in `.claude-plugin/marketplace.json`.
 
+## 1.1.1 (2026-10-28)
+
+- Licensed under MIT: `LICENSE` file and `license: MIT` in the `SKILL.md` frontmatter.
+
 ## 1.1.0 (2026-10-28)
 
 Fixes from running the skill end to end on the Next.js 16 eval fixture (built and served with real Next.js 16.4.3) and walking every eval through its routed references.

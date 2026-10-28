@@ -76,3 +76,7 @@ Evals: see [evals/README.md](evals/README.md). Run them with and without the ski
 - Put current guidance first. Superseded APIs go in each reference's "Old patterns" block.
 - When a fact can't be verified, say so ("verify against current docs") instead of stating it as settled.
 - Bump `metadata.version` in `SKILL.md`, the plugin version in `.claude-plugin/marketplace.json`, and `CHANGELOG.md` together.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

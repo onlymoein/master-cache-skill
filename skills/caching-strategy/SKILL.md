@@ -1,9 +1,10 @@
 ---
 name: caching-strategy
 description: Designs, audits and implements caching for a specific website or app across every layer, including HTTP/browser headers (Cache-Control, ETag, Vary), service workers, CDNs and edge (Cloudflare, Vercel, Netlify, Fastly, CloudFront, Akamai), nginx/Varnish, in-process and Redis/Valkey/Memcached caches, database and ORM caches, framework caching (Next.js use cache/ISR, Nuxt, SvelteKit, Astro, Rails, Django, Laravel, Spring, ASP.NET), CMS, REST/GraphQL APIs, mobile clients, LLM prompt and semantic caching, and CI build caches. Detects the stack, classifies every route, and writes a validated caching plan covering invalidation, stampede protection, cache security and verification. Use when the user mentions caching, stale content, purging, CDN or Redis setup, or when pages are slow, TTFB is high, or origin, database or hosting costs are too high, even if they never say "cache". Not for clearing local package-manager caches or explaining CPU caches.
+license: MIT
 compatibility: Live header probes need network access and user-supplied URLs; every other step runs offline with the Python 3 standard library.
 metadata:
-  version: "1.1.0"
+  version: "1.1.1"
   last-reviewed: "2026-10-28"
 ---
 
